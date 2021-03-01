@@ -16,4 +16,5 @@ function Connect-AADToolkit {
         [string] $TenantId = 'common'
     )    
     Connect-MgGraph -Scopes 'Application.ReadWrite.All' -TenantId $TenantId
+    Get-MgContext
 }

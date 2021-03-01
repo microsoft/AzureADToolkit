@@ -14,11 +14,12 @@
 function Update-AADToolkitApplicationCredentials
 {
     function Show-AppInfo ($appInfo){
+        $appDisplay = $appInfo | Format-List -Property objectId, appId | Out-String
+        $appCreds = $appInfo.creds | Format-Table -Property id, keyId, startDateTime, endDateTime, expired, credentialtype, description | Out-String
+
+        Write-Host $appDisplay.Trim()
         Write-Host
-        $appDisplay = $appInfo | Format-List -Property objectType, objectId, displayName, appId | Out-String
-        $appCreds = $appInfo.creds | Format-Table -Property keyId, startDateTime, endDateTime, expired, credentialtype, description | Out-String
-        Write-Host $appDisplay
-        Write-Host $appCreds
+        Write-Host $appCreds.Trim()
     }
     function Show-Menu {
         Param($appInfo,
@@ -41,10 +42,11 @@ function Update-AADToolkitApplicationCredentials
         while ($true) {
             Clear-Host
             
-            if ($header) { Write-Host $header -ForegroundColor Yellow }        
-            Write-Host $items
+            if ($header) { Write-Host $header -ForegroundColor Yellow }                    
             Show-AppInfo $appInfo
             Write-Host
+            Write-Host "What do you want to do?" -ForegroundColor Yellow
+            Write-Host $items
 
             $answer = (Read-Host -Prompt 'Please make your choice').ToUpper()
             $index  = $choices.IndexOf($answer[0])
@@ -58,13 +60,14 @@ function Update-AADToolkitApplicationCredentials
             }
         }
     }
-    function Get-CredentialInfo ($cred, $credentialType)
+    function Get-CredentialInfo ($id, $cred, $credentialType)
     {
         $expired = "No"
         if(Get-IsExpired -date $cred.endDateTime){
             $expired = "Yes"
         }
         [pscustomobject]@{
+            Id = $id
             CredentialType = $credentialType
             KeyId = $cred.keyId
             Hint = $cred.hint
@@ -76,24 +79,29 @@ function Update-AADToolkitApplicationCredentials
             Expired = $expired
         }
     }
-    function Invoke-CredentialRollover ($appInfo, $keyId){
-        $rolloverKey = $appInfo.Creds | Where-Object {$_.KeyId -eq $keyId}
-        if($rolloverKey)
-        {
-            switch ($rolloverKey.CredentialType) {
-                $credentialTypePassword { 
-                    Add-Password -objectId $appInfo.objectId $appInfo.objectType
-                    Remove-Password -objectId $appInfo.objectId -objectType $appInfo.objectType -keyId $rolloverKey.keyId                
-                }            
-                $credentialTypeKey {
-                    $certFilePath = Read-Host -Prompt 'Enter the path to the certificate file'
-                    $appInfo.keyCredentials = $appInfo.keyCredentials | Where-Object {$_.keyId -ne $keyId}
+    function Invoke-CredentialRollover ($appInfo, $id){
+        $rolloverKey = $appInfo.Creds | Where-Object {$_.Id -eq $id}
+        switch ($rolloverKey.CredentialType) {
+            $credentialTypePassword { 
+                Add-Password -objectId $appInfo.objectId $appInfo.objectType
+                Remove-Password -objectId $appInfo.objectId -objectType $appInfo.objectType -keyId $rolloverKey.keyId
+                Write-Host "Secret rolled over successfully. Copy the 'SecretText' shown above and update your application to use the new secret." -ForegroundColor Yellow
+            }            
+            $credentialTypeKey {                
+                $certFilePath = Read-Host -Prompt 'Enter the path to the certificate file'
+                if($certFilePath.StartsWith('"') -and $certFilePath.EndsWith('"')){ #Remove the double-quotes that Windows adds in 'Copy as path'
+                    $certFilePath = $certFilePath.Substring(1, $certFilePath.Length -2)
+                }
+                
+                if((Test-Path $certFilePath)){
+                    $appInfo.keyCredentials = $appInfo.keyCredentials | Where-Object {$_.keyId -ne $rolloverKey.keyId} #Remove the keyId that is being rolled over
                     Add-Key -objectId $appInfo.objectId $appInfo.objectType -certFilePath $certFilePath
+                    Write-Host "Certificate rolled over successfully." -ForegroundColor Yellow    
+                }
+                else {
+                    Write-Error "Invalid certificate file path." -ErrorAction Stop
                 }
             }
-        }
-        else {
-            Write-Error "Secret or certificate with this KeyId was not found." -ErrorAction Stop
         }
     }
 
@@ -138,20 +146,17 @@ function Update-AADToolkitApplicationCredentials
     }
     function Remove-Keys ($appInfo, $credsToRemove) {
         $keyCredsToRemove = $credsToRemove | Where-Object {$_.CredentialType -eq $credentialTypeKey}
-        if($keyCredsToRemove.Length -gt 0){
-            foreach($cred in $keyCredsToRemove)
-            {
-                Write-Host ("Removing certificate ({0}) from {1} ({2})" -f $cred.keyId, $appInfo.ObjectType, $appInfo.ObjectId)
-                $appInfo.keyCredentials = $appInfo.keyCredentials | Where-Object {$_.keyId -ne $cred.keyId}
-            }
-            if($appInfo.keyCredentials.Length -eq 0){ # Convert null to an empty array to generate a Graph compatible json
-                $appInfo.KeyCredentials = @()
-            }
-            $body = @{keyCredentials = $appInfo.KeyCredentials} | ConvertTo-Json
-            
-            $uri = '/{0}/{1}' -f $appInfo.GraphObjectType, $appInfo.objectId
-            Invoke-AADTGraph -uri $uri -body $body -method PATCH
-        }    
+        foreach($cred in $keyCredsToRemove)
+        {
+            Write-Host ("Removing certificate ({0}) from {1} ({2})" -f $cred.keyId, $appInfo.ObjectType, $appInfo.ObjectId)
+            $appInfo.keyCredentials = $appInfo.keyCredentials | Where-Object {$_.keyId -ne $cred.keyId}
+        }
+        if($appInfo.keyCredentials.Length -eq 0){ # Convert null to an empty array to generate a Graph compatible json
+            $appInfo.KeyCredentials = @()
+        }
+        $body = @{keyCredentials = $appInfo.KeyCredentials} | ConvertTo-Json
+        $uri = '/{0}/{1}' -f $appInfo.GraphObjectType, $appInfo.objectId
+        Invoke-AADTGraph -uri $uri -body $body -method PATCH
     }
     function Remove-Password($objectId, $objectType, $keyId){
         Write-Host ("Removing client secret ({0}) from {1} ({2})" -f $keyId, $objectType, $objectId)
@@ -175,7 +180,6 @@ function Update-AADToolkitApplicationCredentials
         $uri = "/$graphObjectType/$objectId/addPassword"
 
         $body = @{passwordCredential = @{displayName="Rollover"; endDateTime=((Get-Date).AddYears(1).ToString('s'))} } | ConvertTo-Json
-        Write-Host $body
         Invoke-AADTGraph -uri $uri -method POST -body $body
     }
 
@@ -201,7 +205,13 @@ function Update-AADToolkitApplicationCredentials
             usage = 'Verify'        
             key = $base64Value
         }
-        $appInfo.KeyCredentials += $newKeyCredential
+        $keyCreds = @($newKeyCredential)
+        foreach($k in $appInfo.KeyCredentials){ #Convert dates to ISO8601. PowerShell Core does this correctly but PowerShell Windows needs a manual conversion like this.
+            $k.startDateTime = $k.startDateTime.ToString("s")
+            $k.endDateTime = $k.endDateTime.ToString("s")
+            $keyCreds += $k
+        }        
+        $appInfo.KeyCredentials = $keyCreds
 
         $body = @{keyCredentials = $appInfo.KeyCredentials} | ConvertTo-Json
         $uri = '/{0}/{1}' -f $appInfo.GraphObjectType, $appInfo.objectId
@@ -233,13 +243,16 @@ function Update-AADToolkitApplicationCredentials
             }
         }
         $creds = @()
+        $index = 1
         foreach($cred in $app.passwordCredentials)
         {
-            $creds += Get-CredentialInfo -cred $cred -credentialType $credentialTypePassword
+            $creds += Get-CredentialInfo -id $index -cred $cred -credentialType $credentialTypePassword
+            $index++
         }
         foreach($cred in $app.keyCredentials)
         {
-            $creds += Get-CredentialInfo -cred $cred -credentialType $credentialTypeKey
+            $creds += Get-CredentialInfo -id $index -cred $cred -credentialType $credentialTypeKey
+            $index++
         }
         [pscustomobject]@{
             ObjectType = $objectType
@@ -261,13 +274,13 @@ function Update-AADToolkitApplicationCredentials
     $graphObjectTypeServicePrincipals = 'servicePrincipals'
     $credentialTypePassword = 'Client secret'
     $credentialTypeKey = 'Certificate'
-    $menuRemoveAll = 'Remove all certificates and secrets'
-    $menuRemoveCerts = 'Remove all certificates'
-    $menuRemoveSecrets = 'Remove all secrets'
-    $menuRemoveExpiredAll = 'Remove expired certificates and secrets'
-    $menuRemoveExpiredCerts = 'Remove expired certificates'
-    $menuRemoveExpiredSecrets = 'Remove expired secrets'
-    $menuRolloverCred = 'Rollover a certificate or secret'
+    $menuRemoveAll = 'Remove all certificates and secrets for this object'
+    $menuRemoveCerts = 'Remove all certificates for this object'
+    $menuRemoveSecrets = 'Remove all secrets for this object'
+    $menuRemoveExpiredAll = 'Remove expired certificates and secrets for this object'
+    $menuRemoveExpiredCerts = 'Remove expired certificates for this object'
+    $menuRemoveExpiredSecrets = 'Remove expired secrets for this object'
+    $menuRolloverCred = 'Rollover a certificate or secret for this object'
     $menuQuit = 'Quit'
 
 
@@ -285,18 +298,14 @@ function Update-AADToolkitApplicationCredentials
         ##TODO Filter to show options applicable for the selected app
         if($appInfo.Creds -and $appInfo.Creds.Length -gt 0)
         {
-            Show-AppInfo $appInfo
-
-            $hasSecrets = ($appInfo.Creds | Where-Object {$_.CredentialType -eq $credentialTypePassword}).Length -gt 0
-            $hasCerts = ($appInfo.Creds | Where-Object {$_.CredentialType -eq $credentialTypePassword}).Length -gt 0
             $menu = @($menuRemoveAll)
-            if(Get-Passwords -appInfo $appInfo){ $menu += menuRemoveSecrets}
+            if(Get-Passwords -appInfo $appInfo){ $menu += $menuRemoveSecrets}
             if(Get-Certificates -appInfo $appInfo){ $menu += $menuRemoveCerts}
             if(Get-ExpiredCredentials -appInfo $appInfo){ $menu += $menuRemoveExpiredAll}
             if(Get-ExpiredPasswords -appInfo $appInfo){ $menu += $menuRemoveExpiredSecrets}
             if(Get-ExpiredCertificates -appInfo $appInfo){ $menu += $menuRemoveExpiredCerts}
             $menu += $menuRolloverCred, $menuQuit
-            $title = "Manage credentials for {0} {1} ({2})" -f $appInfo.ObjectType, $appInfo.DisplayName, $appInfo.ObjectId
+            $title = "Manage credentials for {0}: {1} ({2})" -f $appInfo.ObjectType, $appInfo.DisplayName, $appInfo.ObjectId
             $selection = Show-Menu -appInfo $appInfo  -MenuItems $menu -Title $title
             
             switch ($selection) {
@@ -304,8 +313,14 @@ function Update-AADToolkitApplicationCredentials
                     Remove-AppCredentials -appInfo $appInfo -selection $selection
                 }
                 $menuRolloverCred {
-                    $rolloverKeyId = Read-Host -Prompt 'Enter the KeyId of the client secret or certificate to be rolled over'
-                    Invoke-CredentialRollover -appInfo $appInfo -keyId $rolloverKeyId
+                    $message = "Enter the Id of the client secret or certificate to be rolled over (1..{0})" -f $appInfo.Creds.Length
+                    $rolloverId = Read-Host -Prompt $message
+                    if($rolloverId -lt 1 -or $rolloverId -gt $appInfo.Creds.Length){
+                        Write-Error "Invalid Id." -ErrorAction Stop
+                    }
+                    else {
+                        Invoke-CredentialRollover -appInfo $appInfo -id $rolloverId
+                    }
                 }
             }
         }

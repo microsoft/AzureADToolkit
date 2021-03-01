@@ -17,7 +17,7 @@ function Invoke-AADTGraph{
         [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
         [string]$Uri,
         [Parameter(Mandatory = $false)]
-        [string]$Body = $null,
+        [string]$Body,
         [Parameter(Mandatory = $false)]
         [string]$Method = 'GET'
     )
@@ -26,5 +26,11 @@ function Invoke-AADTGraph{
         Write-Error "You must call the Connect-AADToolkit cmdlet before calling any other cmdlets." -ErrorAction Stop
     }
     $uri = 'https://graph.microsoft.com/v1.0' + $uri
-    return Invoke-GraphRequest -Uri $uri -Body $body -Method $method    
+    if($Method -eq 'GET'){
+        return Invoke-GraphRequest -Uri $uri -Method $method
+    }
+    else {
+        return Invoke-GraphRequest -Uri $uri -Body $body -Method $method
+    }
+    
 }
