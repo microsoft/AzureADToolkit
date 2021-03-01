@@ -22,6 +22,9 @@ function Invoke-AADTGraph{
         [string]$Method = 'GET'
     )
     
+    if(!(Get-MgContext)){
+        Write-Error "You must call the Connect-AADToolkit cmdlet before calling any other cmdlets." -ErrorAction Stop
+    }
     $uri = 'https://graph.microsoft.com/v1.0' + $uri
     return Invoke-GraphRequest -Uri $uri -Body $body -Method $method    
 }
