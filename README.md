@@ -1,14 +1,34 @@
-# Project
+# Azure AD Toolkit
 
-> This repo has been populated by an initial template to help get you started. Please
-> make sure to update the content to build a great experience for community-building.
+The Azure AD Toolkit is a PowerShell module that providers helper cmdlets to manage the credentials of your application or service principal.
 
-As the maintainer of this project, please make a few updates:
+## Installing the module
+```powershell
+    Install-Module AzureADToolkit
+```
 
-- Improving this README.MD file to provide a great experience
-- Updating SUPPORT.MD with content about this project's support experience
-- Understanding the security reporting process in SECURITY.MD
-- Remove this section from the README
+## Using the module
+
+### Connecting to your tenant
+```powershell
+    Connect-AzureADToolkit
+```
+
+### Exporting a list of all the Service Principals and Applications having credentials
+```powershell
+    Get-AADToolkitApplicationCredentials | Export-Csv -Path '.\AppPermissions.csv'  -NoTypeInformation
+```
+
+### Interactively removing and rolling over the certificates and secrets of a Service Principal or Application
+This command provides a menu drive interface to view the credentials of an application and allows the user to remove or roll them over.
+```powershell
+    Update-AADToolkitApplicationCredentials
+```
+
+### Disconnecting from your tenant
+```powershell
+    Disconnect-AzureADToolkit
+```
 
 ## Contributing
 
