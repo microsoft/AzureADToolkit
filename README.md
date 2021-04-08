@@ -10,8 +10,13 @@ The Azure AD Toolkit is a PowerShell module that providers helper cmdlets to man
 ## Using the module
 
 ### Connecting to your tenant
+Connect to the user's default tenant.
 ```powershell
-    Connect-AzureADToolkit
+    Connect-AADToolkit    
+```
+Specify the Tenant ID if the user signing in has access to multiple Azure Active Directory tenants.
+```powershell
+    Connect-AADToolkit -TenantId 344b8aab-389c-4e4a-8fa1-4c1ae2c0a60d
 ```
 
 ### Exporting a list of all the Service Principals and Applications having credentials
