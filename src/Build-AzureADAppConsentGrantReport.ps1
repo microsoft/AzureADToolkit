@@ -417,8 +417,8 @@ function Build-AzureADAppConsentGrantReport {
 
             if ($null -like $PermissionsTableCsvPath) {
                 # Create hash table of permissions and permissions risk
-                Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/microsoft/AzureADToolkit/main/src/permissiontable.csv' -OutFile .\permissiontable.csv
-                $permstable = Import-Csv .\permissiontable.csv -Delimiter ','
+                Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/microsoft/AzureADToolkit/main/src/data/aadconsentgrantpermissiontable.csv' -OutFile .\aadconsentgrantpermissiontable.csv
+                $permstable = Import-Csv .\aadconsentgrantpermissiontable.csv -Delimiter ','
             }
             else {
 
