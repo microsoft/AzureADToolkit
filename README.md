@@ -30,6 +30,12 @@ This command provides a menu drive interface to view the credentials of an appli
     Update-AADToolkitApplicationCredentials
 ```
 
+### Exporting a list of Service Principals and Applications with risk scores (requires external module to generate Excel Workbook)
+```powershell
+    Install-Module ImportExcel
+    Build-AzureADAppConsentGrantReport -ReportOutputType ExcelWorkbook -ExcelWorkbookPath C:\temp\export.xlsx
+```
+
 ### Disconnecting from your tenant
 ```powershell
     Disconnect-AzureADToolkit
