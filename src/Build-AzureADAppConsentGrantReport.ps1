@@ -51,7 +51,7 @@ function Build-AzureADAppConsentGrantReport {
         function checkMSGraphConnection {
 
 
-        $apiPermissionScopes = @("Application.Read.All")
+        $apiPermissionScopes = @("Application.Read.All", "Application.ReadWrite.All")
  
         if ($null -eq (Get-MgContext) -or $null -eq (Get-MgContext).Scopes) {
             Write-Error "Please Connect to MS Graph API with the Connect-mgGraph cmdlet from the Microsoft.Graph.Authentication module first before calling functions! Application.Read.All is the recommended scope. Sign in with 'Connect-MgGraph -Scopes Application.Read.All'" -ErrorAction Stop
