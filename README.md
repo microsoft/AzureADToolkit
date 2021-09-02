@@ -33,6 +33,7 @@ This command provides a menu drive interface to view the credentials of an appli
 ### Exporting a list of Service Principals and Applications with risk scores (requires external module to generate Excel Workbook)
 ```powershell
     Install-Module ImportExcel
+    Install-Module Microsoft.Graph
     Build-AzureADAppConsentGrantReport -ReportOutputType ExcelWorkbook -ExcelWorkbookPath C:\temp\export.xlsx
 ```
 
