@@ -38,7 +38,7 @@ function Build-AzureADAppConsentGrantReport {
         $ReportOutputType = "ExcelWorkbook",
         # Output file location for Excel Workbook
         [Parameter(ParameterSetName = 'Excel Workbook Output')]
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $false)]
         [string]
         $ExcelWorkbookPath,
         # Path to CSV file for Permissions Table
