@@ -18,8 +18,8 @@
 .NOTES
      - Eligible users for roles may not have active assignments showing in their directoryrolememberships, but they have the potential to elevate to assigned roles
      - Large amounts of role assignments may take time process.
-     - Must be connected to MS Graph with appropriate scopes for reading user, role, an sign in information and selected the beta profile before running.
-      --  Connect-MgGraph
+     - Must be connected to MS Graph with appropriate scopes for reading user, group, application, role, an sign in information and selected the beta profile before running.
+      --  Connect-MgGraph -scopes RoleManagement.Read.Directory,UserAuthenticationMethod.Read.All,AuditLog.Read.All,User.Read.All,Group.Read.All,Application.Read.All
       --  Select-MgProfile -name Beta
 
 #>
@@ -50,22 +50,42 @@ function Find-UnprotectedUsersWithAdminRoles {
 
         }
 
+        if (!$PSCmdlet.MyInvocation.BoundParameters["Verbose"].IsPresent)
+        {
+            Write-Host "NOTE:  This process may take awhile depending on the size of the environment.   Please run with -Verbose switch for more details progress output."
+        }
+
     }
     
     process {
        
         $usersWithRoles = Get-UsersWithRoleAssignments
        
-        Write-Verbose ("Checking {0} users with roles..." -f $usersWithRoles.count)
+        $TotalUsersCount = $usersWithRoles.count
+        Write-Verbose ("Checking {0} users with roles..." -f $TotalUsersCount)
 
         $checkedUsers = @()
-
+        $checkUsersCount = 0
+        
         foreach ($user in $usersWithRoles) {
 
+            $checkUsersCount++
            
+
             $userObject = $null
-            $userObject = get-mguser -userID $user.PrincipalId -Property signInActivity, UserPrincipalName, Id
-            Write-Verbose ("Evaluating {0} with role assignments...." -f $userObject.Id)
+            try {
+
+               
+                $userObject = get-mguser -userID $user.PrincipalId -Property signInActivity, UserPrincipalName, Id
+
+            }
+            catch {
+
+                Write-Warning ("User object with UserId {0} with a role assignment was not found!  Review assignment for orphaned user." -f $user.PrincipalId)
+
+            }
+
+            Write-Verbose ("User {0} of {1} - Evaluating {2} with role assignments...." -f $checkUsersCount,$TotalUsersCount,$userObject.Id)
 
             if ($Null -ne $userObject) {
                 $UserAuthMethodStatus = Get-UserMfaRegisteredStatus -UserId $userObject.UserPrincipalName
@@ -85,7 +105,9 @@ function Find-UnprotectedUsersWithAdminRoles {
                 $checkedUser.DirectoryRoleAssignments = $user.RoleName
                 $checkedUser.DirectoryRoleAssignmentType = $user.AssignmentType
                 $checkedUser.DirectoryRoleAssignmentCount = $user.RoleName.count
+                $checkedUser.RoleAssignedBy = $user.RoleAssignedBy
                 $checkedUser.IsMfaRegistered = $UserAuthMethodStatus.isMfaRegistered
+                $checkedUser.Status = $UserAuthMethodStatus.Status
 
                 if ($includeSignIns -eq $true) {
                     $signInInfo = get-UserSignInSuccessHistoryAuth -userId $checkedUser.UserId
@@ -104,12 +126,21 @@ function Find-UnprotectedUsersWithAdminRoles {
                 }
                 $checkedUsers += ([pscustomobject]$checkedUser)
             }
+            else {
+                
+                $checkedUser = [ordered] @{}
+                $checkedUser.UserID = $userObject.Id
+                $checkedUser.Status = "Not Exists"
+
+            }
         }
         
 
     }
     
     end {
+        Write-Verbose ("{0} Users Evaluated!" -f $checkedUsers.count)
+        Write-Verbose ("{0} Users with roles who are NOT registered for MFA!" -f ($checkedUsers|Where-Object -FilterScript {$_.isMfaRegistered -eq $false}).count)
         Write-Output $checkedUsers
     }
 }
@@ -118,17 +149,30 @@ function Get-UserMfaRegisteredStatus ([string]$UserId) {
 
     $mfaMethods = @("#microsoft.graph.fido2AuthenticationMethod", "#microsoft.graph.softwareOathAuthenticationMethod", "#microsoft.graph.microsoftAuthenticatorAuthenticationMethod", "#microsoft.graph.windowsHelloForBusinessAuthenticationMethod", "#microsoft.graph.phoneAuthenticationMethod")
 
-    $authMethods = (Get-MgUserAuthenticationMethod -UserId $UserId).AdditionalProperties."@odata.type"
-
-    $isMfaRegistered = $false
-    foreach ($mfa in $MfaMethods) { if ($authmethods -contains $mfa) { $isMfaRegistered = $true } }
-    
     $results = @{}
-    $results.IsMfaRegistered = $isMfaRegistered
-    $results.AuthMethodsRegistered = $authMethods
+    try {
 
-    Write-Output ([pscustomobject]$results)
+        $authMethods = (Get-MgUserAuthenticationMethod -UserId $UserId).AdditionalProperties."@odata.type"
 
+        $isMfaRegistered = $false
+        foreach ($mfa in $MfaMethods) { if ($authmethods -contains $mfa) { $isMfaRegistered = $true } }
+        
+       
+
+        $results.IsMfaRegistered = $isMfaRegistered
+        $results.AuthMethodsRegistered = $authMethods
+        $results.status = "Checked"
+        Write-Output ([pscustomobject]$results)
+
+        
+    }
+    catch {
+        Write-Warning ("User object with UserId {0} with a role assignment was not found!  Review assignment for orphaned user." -f $userId)
+        $results.status = "Not Exists"
+        Write-Output ([pscustomobject]$results)
+
+    }
+    
 }
 
 function get-UserSignInSuccessHistoryAuth ([string]$userId) {
@@ -187,49 +231,72 @@ function Get-UsersWithRoleAssignments()
     $AssignmentSchedule =@()
 
     Write-Verbose "Retrieving Active Role Assignments..."
-    $activeRoleAssignments = Get-MgRoleManagementDirectoryRoleAssignmentSchedule -All:$true|Add-Member -MemberType NoteProperty -Name AssignmentScope -Value "Active" -Force -PassThru
+    $activeRoleAssignments = Get-MgRoleManagementDirectoryRoleAssignmentSchedule -All:$true -ExpandProperty Principal|Add-Member -MemberType NoteProperty -Name AssignmentScope -Value "Active" -Force -PassThru|Add-Member -MemberType ScriptProperty -Name PrincipalType -Value {$this.Principal.AdditionalProperties."@odata.type".split('.')[2] } -Force -PassThru
     Write-Verbose ("{0} Active Role Assignments..." -f $activeRoleAssignments.count)
     $AssignmentSchedule += $activeRoleAssignments
     
 
     Write-Verbose "Retrieving Eligible Role Assignments..."
-    $eligibleRoleAssignments = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All:$true|Add-Member -MemberType NoteProperty -Name AssignmentScope -Value "Eligible" -Force -PassThru
+    $eligibleRoleAssignments = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All:$true -ExpandProperty Principal|Add-Member -MemberType NoteProperty -Name AssignmentScope -Value "Eligible" -Force -PassThru|Add-Member -MemberType ScriptProperty -Name PrincipalType -Value {$this.Principal.AdditionalProperties."@odata.type".split('.')[2] } -Force -PassThru
     Write-Verbose ("{0} Eligible Role Assignments..." -f $eligibleRoleAssignments.count)
     $AssignmentSchedule += $eligibleRoleAssignments
 
     Write-Verbose ("{0} Total Role Assignments to all principals..." -f $AssignmentSchedule.count)
     $uniquePrincipals = $AssignmentSchedule.PrincipalId|Get-Unique
     Write-Verbose ("{0} Total Role Assignments to unique principals..." -f $uniquePrincipals.count)
-    
-    foreach ($assignment in ($AssignmentSchedule))
-    {
-        $roleAssignment = @{}
-        $roleAssignment.PrincipalId = $assignment.PrincipalId
-        $directoryObject = Get-MgDirectoryObject -DirectoryObjectId $assignment.PrincipalId
-        $roleAssignment.PrincipalType = $directoryObject.AdditionalProperties."@odata.type".split('.')[2] 
-        $roleAssignment.AssignmentType = $assignment.AssignmentScope
-        $roleAssignment.RoleDefinitionId = $assignment.RoleDefinitionId
-        $roleAssignment.RoleName = Get-MgRoleManagementDirectoryRoleDefinition -UnifiedRoleDefinitionId $assignment.RoleDefinitionId|Select-Object -ExpandProperty displayName
-        $roleAssignments += ([pscustomobject]$roleAssignment)
 
-    }
-    
-
-    Write-Verbose ("{0} Total Role Assignments" -f $roleAssignments.count)
-    $usersWithRoles = $roleAssignments|Where-Object -FilterScript {$_.PrincipalType -eq 'user'}
-    $groupsWithRoles = $roleAssignments|Where-Object -FilterScript {$_.PrincipalType -eq 'group'}
-    $servicePrincipalsWithRoles = $roleAssignments|Where-Object {$_.PrincipalType -eq 'servicePrincipal'}
-
-    if ($groupsWithRoles.count -gt 0)
-    {
-        Write-warning ("Groups with Assigned Roles! -  Groups with roles are not currently enumerated for users who are members of the role assignable groups in the process!")
-    }
-
-
-    foreach ($type in ($roleAssignments|Group-Object PrincipalType))
+    foreach ($type in ($AssignmentSchedule|Group-Object PrincipalType))
     {
         Write-Verbose ("{0} assignments to {1} type" -f $type.count, $type.name)
     }
+    
+    foreach ($assignment in ($AssignmentSchedule))
+    {
+        
+
+        if ($assignment.PrincipalType -eq 'user')
+        {
+            $roleAssignment = @{}
+            $roleAssignment.PrincipalId = $assignment.PrincipalId
+            $roleAssignment.PrincipalType = $assignment.PrincipalType
+            $roleAssignment.AssignmentType = $assignment.AssignmentScope
+            $roleAssignment.RoleDefinitionId = $assignment.RoleDefinitionId
+            $roleAssignment.RoleAssignedBy = "user"
+            $roleAssignment.RoleName = Get-MgRoleManagementDirectoryRoleDefinition -UnifiedRoleDefinitionId $assignment.RoleDefinitionId|Select-Object -ExpandProperty displayName
+            $roleAssignments += ([pscustomobject]$roleAssignment)
+        }
+       
+        if ($assignment.PrincipalType -eq 'group')
+        {
+            Write-Verbose ("Expanding Group Members for Role Assignable Group {0}" -f $assignment.PrincipalId)
+            $groupMembers = Get-MgGroupMember -GroupId $assignment.PrincipalId|Select-Object -ExpandProperty Id
+
+            $RoleName = Get-MgRoleManagementDirectoryRoleDefinition -UnifiedRoleDefinitionId $assignment.RoleDefinitionId|Select-Object -ExpandProperty displayName
+
+            foreach ($member in $groupMembers)
+            {
+                Write-Verbose ("Adding Group Member {0} for Role Assignable Group {0}" -f $member,$assignment.PrincipalId)
+               
+                $roleAssignment = @{}
+                $roleAssignment.PrincipalId = $member
+                $roleAssignment.PrincipalType = "user"
+                $roleAssignment.AssignmentType = $assignment.AssignmentScope
+                $roleAssignment.RoleDefinitionId = $assignment.RoleDefinitionId
+                $roleAssignment.RoleAssignedBy = "group"
+                $roleAssignment.RoleName = $RoleName
+                $roleAssignments += ([pscustomobject]$roleAssignment)
+
+            }
+        }
+
+    }
+    
+
+    
+    $usersWithRoles = $roleAssignments|Where-Object -FilterScript {$_.PrincipalType -eq 'user'}
+    Write-Verbose ("{0} Total Role Assignments to Users" -f $usersWithRoles.count)
+
+   
 
 
 
