@@ -95,8 +95,9 @@ function Update-AADToolkitApplicationCredentials
                 
                 if((Test-Path $certFilePath)){
                     $appInfo.keyCredentials = $appInfo.keyCredentials | Where-Object {$_.keyId -ne $rolloverKey.keyId} #Remove the keyId that is being rolled over
-                    Add-Key -objectId $appInfo.objectId $appInfo.objectType -certFilePath $certFilePath
-                    Write-Host "Certificate rolled over successfully." -ForegroundColor Yellow    
+                    $ErrorActionPreference = 'Stop'
+                    Add-Key -objectId $appInfo.objectId $appInfo.objectType -certFilePath $certFilePath                    
+                    Write-Host "Certificate rolled over successfully." -ForegroundColor Yellow
                 }
                 else {
                     Write-Error "Invalid certificate file path." -ErrorAction Stop
@@ -206,9 +207,13 @@ function Update-AADToolkitApplicationCredentials
             key = $base64Value
         }
         $keyCreds = @($newKeyCredential)
-        foreach($k in $appInfo.KeyCredentials){ #Convert dates to ISO8601. PowerShell Core does this correctly but PowerShell Windows needs a manual conversion like this.
-            $k.startDateTime = $k.startDateTime.ToString("s")
-            $k.endDateTime = $k.endDateTime.ToString("s")
+
+        foreach($k in $appInfo.KeyCredentials){
+            if($PSVersionTable.PSEdition -ne 'Core') {
+                #Convert dates to ISO8601. PowerShell Core does this correctly but PowerShell Windows needs a manual conversion like this.
+                $k.startDateTime = $k.startDateTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                $k.endDateTime = $k.endDateTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            }
             $keyCreds += $k
         }        
         $appInfo.KeyCredentials = $keyCreds
@@ -295,7 +300,6 @@ function Update-AADToolkitApplicationCredentials
             Write-Error "Application or ServicePrincipal with this ObjectId was not found"
         }
         
-        ##TODO Filter to show options applicable for the selected app
         if($appInfo.Creds -and $appInfo.Creds.Length -gt 0)
         {
             $menu = @($menuRemoveAll)

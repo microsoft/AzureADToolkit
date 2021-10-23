@@ -30,7 +30,7 @@ function Invoke-AADTGraph{
         return Invoke-GraphRequest -Uri $uri -Method $method
     }
     else {
-        return Invoke-GraphRequest -Uri $uri -Body $body -Method $method
+        return Invoke-GraphRequest -Uri $uri -Body $body -Method $method -ContentType 'application/json'
     }
     
 }
