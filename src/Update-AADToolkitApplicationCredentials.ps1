@@ -79,33 +79,73 @@ function Update-AADToolkitApplicationCredentials
             Expired = $expired
         }
     }
-    function Invoke-CredentialRollover ($appInfo, $id){
-        $rolloverKey = $appInfo.Creds | Where-Object {$_.Id -eq $id}
-        switch ($rolloverKey.CredentialType) {
+
+    function Remove-Credential ($appInfo, $id){
+        $removeKey = $appInfo.Creds | Where-Object {$_.Id -eq $id}
+        switch ($removeKey.CredentialType) {
             $credentialTypePassword { 
-                Add-Password -objectId $appInfo.objectId $appInfo.objectType
-                Remove-Password -objectId $appInfo.objectId -objectType $appInfo.objectType -keyId $rolloverKey.keyId
-                Write-Host "Secret rolled over successfully. Copy the 'SecretText' shown above and update your application to use the new secret." -ForegroundColor Yellow
+                Remove-Password -objectId $appInfo.objectId -objectType $appInfo.objectType -keyId $removeKey.keyId
+                Write-Host "Secret removed successfully." -ForegroundColor Yellow                
             }            
             $credentialTypeKey {                
-                $certFilePath = Read-Host -Prompt 'Enter the path to the certificate file'
-                if($certFilePath.StartsWith('"') -and $certFilePath.EndsWith('"')){ #Remove the double-quotes that Windows adds in 'Copy as path'
-                    $certFilePath = $certFilePath.Substring(1, $certFilePath.Length -2)
-                }
-                
-                if((Test-Path $certFilePath)){
-                    $appInfo.keyCredentials = $appInfo.keyCredentials | Where-Object {$_.keyId -ne $rolloverKey.keyId} #Remove the keyId that is being rolled over
-                    $ErrorActionPreference = 'Stop'
-                    Add-Key -objectId $appInfo.objectId $appInfo.objectType -certFilePath $certFilePath                    
-                    Write-Host "Certificate rolled over successfully." -ForegroundColor Yellow
-                }
-                else {
-                    Write-Error "Invalid certificate file path." -ErrorAction Stop
-                }
+                $credsToRemove = $appInfo.keyCredentials | Where-Object {$_.keyId -ne $removeKey.keyId} #Remove the keyId that is being rolled over
+                Remove-Keys -appInfo $appInfo -credsToRemove $removeKey
             }
         }
     }
 
+    function Invoke-CredentialRollover ($appInfo, $id, $isRollOver){
+        $rolloverKey = $appInfo.Creds | Where-Object {$_.Id -eq $id}
+        switch ($rolloverKey.CredentialType) {
+            $credentialTypePassword { 
+                Write-Host ("Rolling over client secret for {0} ({1})" -f $appInfo.objectType, $appInfo.objectId)
+                Add-Password -objectId $appInfo.objectId $appInfo.objectType
+                Remove-Password -objectId $appInfo.objectId -objectType $appInfo.objectType -keyId $rolloverKey.keyId
+                Write-Host "Secret rolled over successfully. Copy the 'SecretText' shown above and update your application to use the new secret." -ForegroundColor Yellow                
+            }            
+            $credentialTypeKey {                
+                Invoke-CertificateUpdate -appInfo $appInfo -id $id -rolloverKey $rolloverKey -isRollOver $true 
+            }
+        }
+    }
+
+    # Roll's over certificate if $isRollOver is true, otherwise prompts user to add a new certificate key
+    function Invoke-CertificateUpdate($appInfo, $id, $rolloverKey, $isRollOver){
+        $certFilePath = Read-Host -Prompt 'Enter the path to the certificate file'
+        if($certFilePath.StartsWith('"') -and $certFilePath.EndsWith('"')){ #Remove the double-quotes that Windows adds in 'Copy as path'
+            $certFilePath = $certFilePath.Substring(1, $certFilePath.Length -2)
+        }
+        
+        if((Test-Path $certFilePath)){
+            if($isRollOver){
+                $appInfo.keyCredentials = $appInfo.keyCredentials | Where-Object {$_.keyId -ne $rolloverKey.keyId} #Remove the keyId that is being rolled over
+            }
+            $pref = $ErrorActionPreference
+            $ErrorActionPreference = 'Stop'
+            if($isRollOver){
+                Write-Host ("Rolling over certificate for {0} ({1})" -f $appInfo.objectType, $appInfo.objectId)
+            }
+            else {
+                Write-Host ("Adding certificate for {0} ({1})" -f $appInfo.objectType, $appInfo.objectId)
+            }
+            
+            Add-Key -objectId $appInfo.objectId $appInfo.objectType -certFilePath $certFilePath
+
+            
+            $ErrorActionPreference = $pref
+
+            if($isRollOver){
+                Write-Host "Certificate rolled over successfully." -ForegroundColor Yellow
+            }
+            else {
+                Write-Host "Certificate added successfully." -ForegroundColor Yellow
+            }
+
+        }
+        else {
+            Write-Error "Invalid certificate file path." -ErrorAction Stop
+        }
+    }
     function Get-IsExpired($date){
         return (Get-Date).Subtract($date) -gt 0
     }
@@ -117,7 +157,7 @@ function Update-AADToolkitApplicationCredentials
         return $appInfo.Creds | Where-Object {$_.CredentialType -eq $credentialTypeKey}
     }
     function Get-ExpiredCredentials($appInfo) {
-        return $appInfo.Creds | Where-Object {(Get-IsExpired -date $_.endDateTime)}
+        return $appInfo.Creds | Where-Object {(Get-IsExpired -date $_.endDateTime) -and $_.CredentialType -eq $credentialTypeKey}
     }
     function Get-ExpiredPasswords($appInfo) {
         return $appInfo.Creds | Where-Object {(Get-IsExpired -date $_.endDateTime) -and $_.CredentialType -eq $credentialTypePassword}
@@ -155,6 +195,9 @@ function Update-AADToolkitApplicationCredentials
         if($appInfo.keyCredentials.Length -eq 0){ # Convert null to an empty array to generate a Graph compatible json
             $appInfo.KeyCredentials = @()
         }
+        if($appInfo.keyCredentials.Length -eq 1){ # Convert single element to an array to generate a Graph compatible json
+            $appInfo.KeyCredentials = @($appInfo.KeyCredentials)
+        }
         $body = @{keyCredentials = $appInfo.KeyCredentials} | ConvertTo-Json
         $uri = '/{0}/{1}' -f $appInfo.GraphObjectType, $appInfo.objectId
         Invoke-AADTGraph -uri $uri -body $body -method PATCH
@@ -173,19 +216,17 @@ function Update-AADToolkitApplicationCredentials
     }
 
     function Add-Password($objectId, $objectType){
-        Write-Host ("Rolling over client secret for {0} ({1})" -f $objectType, $objectId)
         switch ($objectType) {
             $objectTypeApplication { $graphObjectType = 'applications' }
             $objectTypeServicePrincipal { $graphObjectType = 'servicePrincipals' }
         }
         $uri = "/$graphObjectType/$objectId/addPassword"
 
-        $body = @{passwordCredential = @{displayName="Rollover"; endDateTime=((Get-Date).AddYears(1).ToString('s'))} } | ConvertTo-Json
+        $body = @{passwordCredential = @{displayName="AADToolkit"; endDateTime=((Get-Date).AddYears(1).ToString('s'))} } | ConvertTo-Json
         Invoke-AADTGraph -uri $uri -method POST -body $body
     }
 
-    function Add-Key($objectId, $objectType, $certFilePath){
-        Write-Host ("Rolling over certificate for {0} ({1})" -f $objectType, $objectId)
+    function Add-Key($objectId, $objectType, $certFilePath){ 
         switch ($objectType) {
             $objectTypeApplication { $graphObjectType = 'applications' }
             $objectTypeServicePrincipal { $graphObjectType = 'servicePrincipals' }
@@ -200,7 +241,7 @@ function Update-AADToolkitApplicationCredentials
         $keyId = [System.Guid]::NewGuid().ToString() 
         $newKeyCredential = @{
             customKeyIdentifier = $base64Thumbprint
-            displayName = 'Rollover'
+            displayName = 'AADToolkit'
             keyId = $keyId
             type = 'AsymmetricX509Cert'
             usage = 'Verify'        
@@ -286,6 +327,9 @@ function Update-AADToolkitApplicationCredentials
     $menuRemoveExpiredCerts = 'Remove expired certificates for this object'
     $menuRemoveExpiredSecrets = 'Remove expired secrets for this object'
     $menuRolloverCred = 'Rollover a certificate or secret for this object'
+    $menuAddSecret = 'Add a new secret'
+    $menuAddCert = 'Add a new certificate'
+    $menuRemoveSecretOrCert = 'Remove a single secret or certificate'
     $menuQuit = 'Quit'
 
 
@@ -300,15 +344,19 @@ function Update-AADToolkitApplicationCredentials
             Write-Error "Application or ServicePrincipal with this ObjectId was not found"
         }
         
-        if($appInfo.Creds -and $appInfo.Creds.Length -gt 0)
-        {
-            $menu = @($menuRemoveAll)
+            $menu = @($menuAddCert, $menuAddSecret)
+
+            if((Get-Passwords -appInfo $appInfo) -or (Get-Certificates -appInfo $appInfo)){ 
+                $menu += $menuRemoveSecretOrCert, $menuRolloverCred, $menuRemoveAll
+            }
+            
             if(Get-Passwords -appInfo $appInfo){ $menu += $menuRemoveSecrets}
             if(Get-Certificates -appInfo $appInfo){ $menu += $menuRemoveCerts}
             if(Get-ExpiredCredentials -appInfo $appInfo){ $menu += $menuRemoveExpiredAll}
             if(Get-ExpiredPasswords -appInfo $appInfo){ $menu += $menuRemoveExpiredSecrets}
             if(Get-ExpiredCertificates -appInfo $appInfo){ $menu += $menuRemoveExpiredCerts}
-            $menu += $menuRolloverCred, $menuQuit
+
+            $menu += $menuQuit
             $title = "Manage credentials for {0}: {1} ({2})" -f $appInfo.ObjectType, $appInfo.DisplayName, $appInfo.ObjectId
             $selection = Show-Menu -appInfo $appInfo  -MenuItems $menu -Title $title
             
@@ -326,11 +374,24 @@ function Update-AADToolkitApplicationCredentials
                         Invoke-CredentialRollover -appInfo $appInfo -id $rolloverId
                     }
                 }
+                $menuRemoveSecretOrCert {
+                    $message = "Enter the Id of the client secret or certificate to be removed (1..{0})" -f $appInfo.Creds.Length
+                    $removeId = Read-Host -Prompt $message
+                    if($removeId -lt 1 -or $removeId -gt $appInfo.Creds.Length){
+                        Write-Error "Invalid Id." -ErrorAction Stop
+                    }
+                    else {
+                        Remove-Credential -appInfo $appInfo -id $removeId
+                    }
+                }
+                $menuAddCert {
+                    Invoke-CertificateUpdate -appInfo $appInfo -id $id -isRollOver $false
+                }
+                $menuAddSecret {
+                    Write-Host ("Adding client secret for {0} ({1})" -f $appInfo.objectType, $appInfo.objectId)
+                    Add-Password -objectId $appInfo.objectId $appInfo.objectType
+                    Write-Host "Secret added successfully. Copy the 'SecretText' shown above and update your application to use the new secret." -ForegroundColor Yellow
+                }
             }
-        }
-        else {
-            $message = "{0} does have any client secrets or certificates." -f $appInfo.ObjectType
-            Write-Error $message
-        }
     }
 }
