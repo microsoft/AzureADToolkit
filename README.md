@@ -50,6 +50,17 @@ This example will retrieve the data and store it in PowerShell objects instead o
     Build-AzureADAppConsentGrantReport -ReportOutputType PowerShellObjects
 ```
 
+### List all users with admin roles and their strong authentication status
+
+Find Users with Admin Roles that are not registered for MFA by evaluating their authentication methods registered for MFA and their sign-in activity.
+
+```
+   Connect-MgGraph -Scopes RoleManagement.Read.Directory,UserAuthenticationMethod.Read.All,AuditLog.Read.All,User.Read.All,Group.Read.All,Application.Read.All
+   Select-MgProfile -name Beta
+   Find-UnprotectedUsersWithAdminRoles -Verbose -IncludeSignIns | Export-Csv ./admins.csv
+```
+
+
 ### Disconnecting from your tenant
 ```powershell
     Disconnect-AzureADToolkit
