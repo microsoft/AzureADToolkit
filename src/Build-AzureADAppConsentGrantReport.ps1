@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Lists and categorizes risk for delegated permissions (OAuth2PermissionGrants) and application permissions (AppRoleAssignments).
+    Lists and categorizes privilege for delegated permissions (OAuth2PermissionGrants) and application permissions (AppRoleAssignments).
 .DESCRIPTION
     Long description
 .EXAMPLE
@@ -8,7 +8,7 @@
     Output a report in Excel format
 .EXAMPLE
     Build-AzureADAppConsentGrantReport -ReportOutputType ExcelWorkbook -ExcelWorkbookPath C:\temp\report.xlsx -PermissionsTableCsvPath .\table.csv
-    Output a report in Excel format and specify a local path for a customized CSV containing consent risk categorizations
+    Output a report in Excel format and specify a local path for a customized CSV containing consent privilege categorizations
 .INPUTS
     Inputs to this cmdlet (if any)
 .OUTPUTS
@@ -88,8 +88,8 @@ function Build-AzureADAppConsentGrantReport {
             }
 
             $count = 0
-            $highriskobjects = $evaluatedData | Where-Object { $_.Risk -eq "High" }
-            $highriskobjects | ForEach-Object {
+            $highprivilegeobjects = $evaluatedData | Where-Object { $_.Privilege -eq "High" }
+            $highprivilegeobjects | ForEach-Object {
                 $userAssignmentRequired = @()
                 $userAssignments = @()
                 $userAssignmentsCount = @()
@@ -106,17 +106,17 @@ function Build-AzureADAppConsentGrantReport {
                 }
 
                 $count++
-                Write-Progress -activity "Counting users assigned to high risk apps . . ." -status "Apps Counted: $count of $($highriskobjects.Count)" -percentComplete (($count / $highriskobjects.Count) * 100)
+                Write-Progress -activity "Counting users assigned to high privilege apps . . ." -status "Apps Counted: $count of $($highprivilegeobjects.Count)" -percentComplete (($count / $highprivilegeobjects.Count) * 100)
             }
-            $highriskusers = $highriskobjects | Where-Object { $null -ne $_.PrincipalObjectId } | Select-Object PrincipalDisplayName, Risk | Sort-Object PrincipalDisplayName -Unique
-            $highriskapps = $highriskobjects | Select-Object ClientDisplayName, Risk, UsersAssignedCount, MicrosoftRegisteredClientApp | Sort-Object ClientDisplayName -Unique | Sort-Object UsersAssignedCount -Descending
+            $highprivilegeusers = $highprivilegeobjects | Where-Object { $null -ne $_.PrincipalObjectId } | Select-Object PrincipalDisplayName, Privilege | Sort-Object PrincipalDisplayName -Unique
+            $highprivilegeapps = $highprivilegeobjects | Select-Object ClientDisplayName, Privilege, UsersAssignedCount, MicrosoftRegisteredClientApp | Sort-Object ClientDisplayName -Unique | Sort-Object UsersAssignedCount -Descending
 
             # Pivot table by user
             $pt = New-PivotTableDefinition -SourceWorkSheet ConsentGrantData `
                 -PivotTableName "PermissionsByUser" `
-                -PivotFilter RiskFilter, PermissionFilter, ResourceDisplayNameFilter, ConsentTypeFilter, ClientDisplayName, MicrosoftRegisteredClientApp `
+                -PivotFilter PrivilegeFilter, PermissionFilter, ResourceDisplayNameFilter, ConsentTypeFilter, ClientDisplayName, MicrosoftRegisteredClientApp `
                 -PivotRows PrincipalDisplayName `
-                -PivotColumns Risk, PermissionType `
+                -PivotColumns Privilege, PermissionType `
                 -PivotData @{Permission = 'Count' } `
                 -IncludePivotChart `
                 -ChartType ColumnStacked `
@@ -128,9 +128,9 @@ function Build-AzureADAppConsentGrantReport {
             # Pivot table by resource
             $pt += New-PivotTableDefinition -SourceWorkSheet ConsentGrantData `
                 -PivotTableName "PermissionsByResource" `
-                -PivotFilter RiskFilter, ResourceDisplayNameFilter, ConsentTypeFilter, PrincipalDisplayName, MicrosoftRegisteredClientApp `
+                -PivotFilter PrivilegeFilter, ResourceDisplayNameFilter, ConsentTypeFilter, PrincipalDisplayName, MicrosoftRegisteredClientApp `
                 -PivotRows ResourceDisplayName, PermissionFilter `
-                -PivotColumns Risk, PermissionType `
+                -PivotColumns Privilege, PermissionType `
                 -PivotData @{Permission = 'Count' } `
                 -IncludePivotChart `
                 -ChartType ColumnStacked `
@@ -139,11 +139,11 @@ function Build-AzureADAppConsentGrantReport {
                 -ChartRow 4 `
                 -ChartColumn 14
 
-            # Pivot table by risk rating
+            # Pivot table by privilege rating
             $pt += New-PivotTableDefinition -SourceWorkSheet ConsentGrantData `
-                -PivotTableName "PermissionsByRiskRating" `
-                -PivotFilter RiskFilter, PermissionFilter, ResourceDisplayNameFilter, ConsentTypeFilter, PrincipalDisplayName, MicrosoftRegisteredClientApp `
-                -PivotRows Risk, ResourceDisplayName `
+                -PivotTableName "PermissionsByPrivilegeRating" `
+                -PivotFilter PrivilegeFilter, PermissionFilter, ResourceDisplayNameFilter, ConsentTypeFilter, PrincipalDisplayName, MicrosoftRegisteredClientApp `
+                -PivotRows Privilege, ResourceDisplayName `
                 -PivotColumns PermissionType `
                 -PivotData @{Permission = 'Count' } `
                 -IncludePivotChart `
@@ -158,31 +158,31 @@ function Build-AzureADAppConsentGrantReport {
                 -AutoSize `
                 -Activate `
                 -HideSheet "None" `
-                -UnHideSheet "PermissionsByRiskRating" `
+                -UnHideSheet "PermissionsByPrivilegeRating" `
                 -PassThru
 
-            # Create temporary Excel file and add High Risk Users sheet
+            # Create temporary Excel file and add High Privilege Users sheet
             $xlTempFile = "$env:TEMP\ImportExcelTempFile.xlsx"
             Remove-Item $xlTempFile -ErrorAction Ignore
-            $exceltemp = $highriskusers | Export-Excel $xlTempFile -PassThru
-            Add-Worksheet -ExcelPackage $excel -WorksheetName HighRiskUsers -CopySource $exceltemp.Workbook.Worksheets["Sheet1"]
+            $exceltemp = $highprivilegeusers | Export-Excel $xlTempFile -PassThru
+            Add-Worksheet -ExcelPackage $excel -WorksheetName HighPrivilegeUsers -CopySource $exceltemp.Workbook.Worksheets["Sheet1"]
 
-            # Create temporary Excel file and add High Risk Apps sheet
+            # Create temporary Excel file and add High Privilege Apps sheet
             $xlTempFile = "$env:TEMP\ImportExcelTempFile.xlsx"
             Remove-Item $xlTempFile -ErrorAction Ignore
-            $exceltemp = $highriskapps | Export-Excel $xlTempFile -PassThru
-            Add-Worksheet -ExcelPackage $excel -WorksheetName HighRiskApps -CopySource $exceltemp.Workbook.Worksheets["Sheet1"] -Activate
+            $exceltemp = $highprivilegeapps | Export-Excel $xlTempFile -PassThru
+            Add-Worksheet -ExcelPackage $excel -WorksheetName HighPrivilegeApps -CopySource $exceltemp.Workbook.Worksheets["Sheet1"] -Activate
 
             $sheet = $excel.Workbook.Worksheets["ConsentGrantData"]
             Add-ConditionalFormatting -Worksheet $sheet -Range "A1:N1048576" -RuleType Equal -ConditionValue "High" -ForeGroundColor White -BackgroundColor Red -Bold -Underline
             Add-ConditionalFormatting -Worksheet $sheet -Range "A1:N1048576" -RuleType Equal -ConditionValue "Medium" -ForeGroundColor Black -BackgroundColor Orange -Bold -Underline
             Add-ConditionalFormatting -Worksheet $sheet -Range "A1:N1048576" -RuleType Equal -ConditionValue "Low" -ForeGroundColor Black -BackgroundColor Yellow -Bold -Underline
 
-            $sheet = $excel.Workbook.Worksheets["HighRiskUsers"]
+            $sheet = $excel.Workbook.Worksheets["HighPrivilegeUsers"]
             Add-ConditionalFormatting -Worksheet $sheet -Range "B1:B1048576" -RuleType Equal -ConditionValue "High" -ForeGroundColor White -BackgroundColor Red -Bold -Underline
             Set-ExcelRange -Worksheet $sheet -Range A1:C1048576 -AutoSize
 
-            $sheet = $excel.Workbook.Worksheets["HighRiskApps"]
+            $sheet = $excel.Workbook.Worksheets["HighPrivilegeApps"]
             Add-ConditionalFormatting -Worksheet $sheet -Range "B1:B1048576" -RuleType Equal -ConditionValue "High" -ForeGroundColor White -BackgroundColor Red -Bold -Underline
             Set-ExcelRange -Worksheet $sheet -Range A1:C1048576 -AutoSize
 
@@ -342,14 +342,14 @@ function Build-AzureADAppConsentGrantReport {
             )
 
 
-            # Process Risk for gathered data
+            # Process Privilege for gathered data
             $count = 0
             $data | ForEach-Object {
 
                 try {
                    
                     $count++
-                    Write-Progress -activity "Processing risk for each permission . . ." -status "Processed: $count of $($data.Count)" -percentComplete (($count / $data.Count) * 100)
+                    Write-Progress -activity "Processing privilege for each permission . . ." -status "Processed: $count of $($data.Count)" -percentComplete (($count / $data.Count) * 100)
 
                     $scope = $_.Permission
                     if ($_.PermissionType -eq "Delegated-AllPrincipals" -or "Delegated-Principal") {
@@ -360,7 +360,7 @@ function Build-AzureADAppConsentGrantReport {
                     }
 
                     # Check permission table for an exact match
-                    $risk = $null
+                    $privilege = $null
                     $scoperoot = @()
                     Write-Debug ("Permission Scope: $Scope")
 
@@ -371,33 +371,33 @@ function Build-AzureADAppConsentGrantReport {
                         $scoperoot = $scope
                     }
 
-                    $test = ($permstable | Where-Object { $_.Permission -eq "$scoperoot" -and $_.Type -eq $type }).Risk # checking if there is a matching root in the CSV
-                    $risk = ($permstable | Where-Object { $_.Permission -eq "$scope" -and $_.Type -eq $type }).Risk # Checking for an exact match
+                    $test = ($permstable | Where-Object { $_.Permission -eq "$scoperoot" -and $_.Type -eq $type }).Privilege # checking if there is a matching root in the CSV
+                    $privilege = ($permstable | Where-Object { $_.Permission -eq "$scope" -and $_.Type -eq $type }).Privilege # Checking for an exact match
 
                     # Search for matching root level permission if there was no exact match
-                    if (!$risk -and $test) {
+                    if (!$privilege -and $test) {
                         # No exact match, but there is a root match
-                        $risk = ($permstable | Where-Object { $_.Permission -eq "$scoperoot" -and $_.Type -eq $type }).Risk
+                        $privilege = ($permstable | Where-Object { $_.Permission -eq "$scoperoot" -and $_.Type -eq $type }).Privilege
                     }
-                    elseif (!$risk -and !$test -and $type -eq "Application" -and $scope -like "*Write*") {
+                    elseif (!$privilege -and !$test -and $type -eq "Application" -and $scope -like "*Write*") {
                         # Application permissions without exact or root matches with write scope
-                        $risk = "High"
+                        $privilege = "High"
                     }
-                    elseif (!$risk -and !$test -and $type -eq "Application" -and $scope -notlike "*Write*") {
+                    elseif (!$privilege -and !$test -and $type -eq "Application" -and $scope -notlike "*Write*") {
                         # Application permissions without exact or root matches without write scope
-                        $risk = "Medium"
+                        $privilege = "Medium"
                     }
-                    elseif ($risk) {
+                    elseif ($privilege) {
 
                     }
                     else {
                         # Any permissions without a match, should be primarily Delegated permissions
-                        $risk = "Unranked"
+                        $privilege = "Unranked"
                     }
 
-                    # Add the risk to the current object
-                    Add-Member -InputObject $_ -MemberType NoteProperty -Name Risk -Value $risk
-                    Add-Member -InputObject $_ -MemberType NoteProperty -Name RiskFilter -Value $risk
+                    # Add the privilege to the current object
+                    Add-Member -InputObject $_ -MemberType NoteProperty -Name Privilege -Value $privilege
+                    Add-Member -InputObject $_ -MemberType NoteProperty -Name PrivilegeFilter -Value $privilege
                     Add-Member -InputObject $_ -MemberType NoteProperty -Name Reason -Value $reason
                 }
                 catch {
@@ -416,7 +416,7 @@ function Build-AzureADAppConsentGrantReport {
             )
 
             if ($null -like $PermissionsTableCsvPath) {
-                # Create hash table of permissions and permissions risk
+                # Create hash table of permissions and permissions privilege
                 Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/microsoft/AzureADToolkit/main/src/data/aadconsentgrantpermissiontable.csv' -OutFile .\aadconsentgrantpermissiontable.csv
                 $permstable = Import-Csv .\aadconsentgrantpermissiontable.csv -Delimiter ','
             }
