@@ -1,4 +1,4 @@
-Type,Permission,Risk,Reason
+Type,Permission,Privilege,Reason
 Delegated,Mail.ReadBasic,Medium,DataExfiltration
 Delegated,Mail,High,Phishing
 Delegated,Contacts,High,Phishing

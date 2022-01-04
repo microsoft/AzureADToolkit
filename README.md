@@ -30,7 +30,7 @@ This command provides a menu drive interface to view the credentials of an appli
     Update-AADToolkitApplicationCredentials
 ```
 
-### Exporting a list of Service Principals and Applications with risk scores (requires external module to generate Excel Workbook)
+### Exporting a list of Service Principals and Applications with privilege scores (requires external module to generate Excel Workbook)
 It is recommended that you use `Connect-MgGraph -Scopes Application.Read.All` to connect to Microsoft Graph PowerShell for this report. The minimum administrative role necessary to consent to this permission is Application Administrator.
 
 Connect to Microsoft Graph PowerShell with the appropriate permissions:
