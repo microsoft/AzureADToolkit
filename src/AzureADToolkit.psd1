@@ -70,8 +70,9 @@
         'Disconnect-AADToolkit.ps1'
         'Get-AADToolkitApplicationCredentials.ps1'
         'Update-AADToolkitApplicationCredentials.ps1'
-        'Build-AzureADAppConsentGrantReport.ps1'
-        'Find-UnprotectedUsersWithAdminRoles.ps1'
+        'Build-AADToolkitAppConsentGrantReport.ps1'
+        'Find-AADToolkitUnprotectedUsersWithAdminRoles.ps1'
+        'Get-AADToolkitExternalTenantUserActivity.ps1'
     )
     
     # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
@@ -80,8 +81,9 @@
         'Disconnect-AADToolkit'
         'Get-AADToolkitApplicationCredentials'
         'Update-AADToolkitApplicationCredentials'
-        'Build-AzureADAppConsentGrantReport'
-        'Find-UnprotectedUsersWithAdminRoles'
+        'Build-AADToolkitAppConsentGrantReport'
+        'Find-AADToolkitUnprotectedUsersWithAdminRoles'
+        'Get-AADToolkitExternalTenantUserActivity.ps1'
     )
     
     # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
