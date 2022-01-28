@@ -4,10 +4,10 @@
 .DESCRIPTION
     Long description
 .EXAMPLE
-    Build-AzureADAppConsentGrantReport -ReportOutputType ExcelWorkbook -ExcelWorkbookPath C:\temp\report.xlsx
+    Build-AADToolkitAppConsentGrantReport -ReportOutputType ExcelWorkbook -ExcelWorkbookPath C:\temp\report.xlsx
     Output a report in Excel format
 .EXAMPLE
-    Build-AzureADAppConsentGrantReport -ReportOutputType ExcelWorkbook -ExcelWorkbookPath C:\temp\report.xlsx -PermissionsTableCsvPath .\table.csv
+    Build-AADToolkitAppConsentGrantReport -ReportOutputType ExcelWorkbook -ExcelWorkbookPath C:\temp\report.xlsx -PermissionsTableCsvPath .\table.csv
     Output a report in Excel format and specify a local path for a customized CSV containing consent privilege categorizations
 .INPUTS
     Inputs to this cmdlet (if any)
@@ -22,7 +22,7 @@
 .FUNCTIONALITY
     The functionality that best describes this cmdlet
 #>
-function Build-AzureADAppConsentGrantReport {
+function Build-AADToolkitAppConsentGrantReport {
     [CmdletBinding(DefaultParameterSetName = 'Download Permissions Table Data',
         SupportsShouldProcess = $true,
         PositionalBinding = $false,

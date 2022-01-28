@@ -6,10 +6,10 @@
 .PARAMETER IncludeSignIns
     Include Sign In log activity -  Note this can cause the query to run slower in larger active environments
 .EXAMPLE
-    Find-UnprotectedUsersWithAdminRoles
+    Find-AADToolkitUnprotectedUsersWithAdminRoles
     Enumrate users with role assignments including their sign in activity
 .EXAMPLE
-    Find-UnprotectedUsersWithAdminRoles -includeSignIns:$false
+    Find-AADToolkitUnprotectedUsersWithAdminRoles -includeSignIns:$false
     Enumerate users with role assignments including their sign in activity
 .INPUTS
     Inputs to this cmdlet (if any)
@@ -23,7 +23,7 @@
       --  Select-MgProfile -name Beta
 
 #>
-function Find-UnprotectedUsersWithAdminRoles {
+function Find-AADToolkitUnprotectedUsersWithAdminRoles {
     [CmdletBinding(DefaultParameterSetName = 'Parameter Set 1',
         PositionalBinding = $false,
         HelpUri = 'http://www.microsoft.com/',
