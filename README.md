@@ -37,12 +37,12 @@ Connect to Microsoft Graph PowerShell with the appropriate permissions:
 ```powershell
     Install-Module ImportExcel
     Install-Module Microsoft.Graph
-    Connect-MgGragh -Scopes Application.Read.All
+    Connect-MgGraph -Scopes Application.Read.All
 ```
 
 This example will export the report to an Excel workbook:
 ```
-    Build-AzureADAppConsentGrantReport -ReportOutputType ExcelWorkbook -ExcelWorkbookPath C:\temp\export.xlsx
+    Build-AADToolkitAppConsentGrantReport -ReportOutputType ExcelWorkbook -ExcelWorkbookPath C:\temp\export.xlsx
 ```
 
 This example will retrieve the data and store it in PowerShell objects instead of exporting to Excel:
